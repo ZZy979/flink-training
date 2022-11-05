@@ -20,7 +20,7 @@ package org.apache.flink.training.exercises.ridecleansing.scala
 
 import org.apache.flink.training.exercises.common.sources.TaxiRideGenerator
 import org.apache.flink.training.exercises.common.utils.ExerciseBase._
-import org.apache.flink.training.exercises.common.utils.{ExerciseBase, GeoUtils, MissingSolutionException}
+import org.apache.flink.training.exercises.common.utils.{ExerciseBase, GeoUtils}
 import org.apache.flink.streaming.api.scala._
 
 /**
@@ -44,7 +44,7 @@ object RideCleansingExercise extends ExerciseBase {
 
     val filteredRides = rides
       // filter out rides that do not start and end in NYC
-      .filter(ride => throw new MissingSolutionException)
+      .filter(ride => GeoUtils.isInNYC(ride.startLon, ride.startLat) && GeoUtils.isInNYC(ride.endLon, ride.endLat))
 
     // print the filtered stream
     printOrTest(filteredRides)
