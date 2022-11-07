@@ -19,9 +19,15 @@
 package org.apache.flink.training.exercises.hourlytips.scala
 
 import org.apache.flink.streaming.api.scala._
+import org.apache.flink.streaming.api.scala.function.ProcessWindowFunction
+import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows
+import org.apache.flink.streaming.api.windowing.time.Time
+import org.apache.flink.streaming.api.windowing.windows.TimeWindow
+import org.apache.flink.training.exercises.common.datatypes.TaxiFare
 import org.apache.flink.training.exercises.common.sources.TaxiFareGenerator
+import org.apache.flink.training.exercises.common.utils.ExerciseBase
 import org.apache.flink.training.exercises.common.utils.ExerciseBase._
-import org.apache.flink.training.exercises.common.utils.{ExerciseBase, MissingSolutionException}
+import org.apache.flink.util.Collector
 
 /**
   * The "Hourly Tips" exercise of the Flink training in the docs.
@@ -41,13 +47,25 @@ object HourlyTipsExercise {
     // start the data generator
     val fares = env.addSource(fareSourceOrTest(new TaxiFareGenerator()))
 
-    throw new MissingSolutionException()
+    val hourlySum = fares.keyBy(_.driverId)
+      .window(TumblingEventTimeWindows.of(Time.hours(1)))
+      .process(new WindowSum)
+
+    val hourlyMax = hourlySum
+      .windowAll(TumblingEventTimeWindows.of(Time.hours(1)))
+      .maxBy(2)
 
    // print result on stdout
-//    printOrTest(hourlyMax)
+    printOrTest(hourlyMax)
 
     // execute the transformation pipeline
     env.execute("Hourly Tips (scala)")
   }
 
+}
+
+class WindowSum extends ProcessWindowFunction[TaxiFare, (Long, Long, Float), Long, TimeWindow] {
+  override def process(driverId: Long, context: Context, fares: Iterable[TaxiFare], out: Collector[(Long, Long, Float)]): Unit = {
+    out.collect((context.window.getEnd, driverId, fares.map(_.tip).sum))
+  }
 }

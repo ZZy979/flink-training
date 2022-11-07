@@ -18,12 +18,19 @@
 
 package org.apache.flink.training.exercises.hourlytips;
 
+import org.apache.flink.api.java.tuple.Tuple3;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.windowing.ProcessWindowFunction;
+import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows;
+import org.apache.flink.streaming.api.windowing.time.Time;
+import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
 import org.apache.flink.training.exercises.common.datatypes.TaxiFare;
 import org.apache.flink.training.exercises.common.sources.TaxiFareGenerator;
 import org.apache.flink.training.exercises.common.utils.ExerciseBase;
-import org.apache.flink.training.exercises.common.utils.MissingSolutionException;
+import org.apache.flink.util.Collector;
+
+import java.util.stream.StreamSupport;
 
 /**
  * The "Hourly Tips" exercise of the Flink training in the docs.
@@ -48,12 +55,32 @@ public class HourlyTipsExercise extends ExerciseBase {
 		// start the data generator
 		DataStream<TaxiFare> fares = env.addSource(fareSourceOrTest(new TaxiFareGenerator()));
 
-		throw new MissingSolutionException();
+		DataStream<Tuple3<Long, Long, Float>> hourlySum = fares.keyBy(fare -> fare.driverId)
+				.window(TumblingEventTimeWindows.of(Time.hours(1)))
+				.process(new WindowSum());
 
-//		printOrTest(hourlyMax);
+		DataStream<Tuple3<Long, Long, Float>> hourlyMax = hourlySum
+				.windowAll(TumblingEventTimeWindows.of(Time.hours(1)))
+				.maxBy(2);
+
+		printOrTest(hourlyMax);
 
 		// execute the transformation pipeline
-//		env.execute("Hourly Tips (java)");
+		env.execute("Hourly Tips (java)");
 	}
 
+}
+
+class WindowSum extends ProcessWindowFunction<TaxiFare, Tuple3<Long, Long, Float>, Long, TimeWindow> {
+	@Override
+	public void process(
+			Long driverId,
+			Context context,
+			Iterable<TaxiFare> fares,
+			Collector<Tuple3<Long, Long, Float>> out) {
+		float totalTip = StreamSupport.stream(fares.spliterator(), false)
+				.map(fare -> fare.tip)
+				.reduce(0f, Float::sum);
+		out.collect(Tuple3.of(context.window().getEnd(), driverId, totalTip));
+	}
 }
