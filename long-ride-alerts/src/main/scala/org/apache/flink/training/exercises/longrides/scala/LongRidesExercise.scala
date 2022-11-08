@@ -18,14 +18,16 @@
 
 package org.apache.flink.training.exercises.longrides.scala
 
-import org.apache.flink.configuration.Configuration
+import org.apache.flink.api.common.state.ValueStateDescriptor
 import org.apache.flink.streaming.api.functions.KeyedProcessFunction
 import org.apache.flink.streaming.api.scala.{StreamExecutionEnvironment, _}
 import org.apache.flink.training.exercises.common.datatypes.TaxiRide
 import org.apache.flink.training.exercises.common.sources.TaxiRideGenerator
+import org.apache.flink.training.exercises.common.utils.ExerciseBase
 import org.apache.flink.training.exercises.common.utils.ExerciseBase._
-import org.apache.flink.training.exercises.common.utils.{ExerciseBase, MissingSolutionException}
 import org.apache.flink.util.Collector
+
+import scala.concurrent.duration.DurationInt
 
 /**
   * The "Long Ride Alerts" exercise of the Flink training in the docs.
@@ -54,19 +56,39 @@ object LongRidesExercise {
   }
 
   class ImplementMeFunction extends KeyedProcessFunction[Long, TaxiRide, TaxiRide] {
-
-    override def open(parameters: Configuration): Unit = {
-      throw new MissingSolutionException()
-    }
+    @transient
+    private lazy val arrivedEvent = getRuntimeContext.getState(new ValueStateDescriptor[TaxiRide]("arrivedEvent", classOf[TaxiRide]))
 
     override def processElement(ride: TaxiRide,
                                 context: KeyedProcessFunction[Long, TaxiRide, TaxiRide]#Context,
                                 out: Collector[TaxiRide]): Unit = {
+      val timerService = context.timerService()
+      val arrived = arrivedEvent.value()
+      val twoHours = 2.hours.toMillis
+      if (ride.isStart) {
+        if (arrived == null) {
+          // END event hasn't arrived yet
+          arrivedEvent.update(ride)
+          timerService.registerEventTimeTimer(ride.getEventTime + twoHours)
+        } else {
+          arrivedEvent.clear()
+        }
+      } else {
+        if (arrived == null) {
+          // START event hasn't arrived yet
+          arrivedEvent.update(ride)
+        } else {
+          timerService.deleteEventTimeTimer(arrived.getEventTime + twoHours)
+          arrivedEvent.clear()
+        }
+      }
     }
 
     override def onTimer(timestamp: Long,
                          ctx: KeyedProcessFunction[Long, TaxiRide, TaxiRide]#OnTimerContext,
                          out: Collector[TaxiRide]): Unit = {
+      out.collect(arrivedEvent.value())
+      arrivedEvent.clear()
     }
 
   }
